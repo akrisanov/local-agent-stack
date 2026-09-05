@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if command -v ollama >/dev/null 2>&1; then
+  echo "Ollama is already installed:"
+  ollama --version
+  exit 0
+fi
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required to install Ollama on macOS." >&2
+  exit 1
+fi
+
+echo "Installing Ollama..."
+brew install --cask ollama
+
+echo
+echo "Ollama installed."
+echo "Start the Ollama application once before running make doctor."

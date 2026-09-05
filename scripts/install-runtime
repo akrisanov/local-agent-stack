@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+case "${OS}-${ARCH}" in
+  Darwin-arm64)
+    exec "$(dirname "$0")/../platform/macos/install-ollama"
+    ;;
+  *)
+    echo "Unsupported platform: ${OS} ${ARCH}" >&2
+    exit 1
+    ;;
+esac

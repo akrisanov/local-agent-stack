@@ -5,6 +5,8 @@ set -u
 CONFIG_DIR="${HOME}/.config/local-agent-stack"
 ROLE_FILE="${CONFIG_DIR}/role"
 ENV_FILE="${CONFIG_DIR}/env"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODEL_FILE="${REPO_ROOT}/models/default-model"
 
 failures=0
 
@@ -96,6 +98,21 @@ if [[ "$ROLE" == "inference-host" ]]; then
     ok "ollama API reachable"
   else
     fail "ollama API is not reachable"
+  fi
+
+  if [[ -f "$MODEL_FILE" ]]; then
+    REQUIRED_MODEL="$(tr -d '[:space:]' < "$MODEL_FILE")"
+
+    if [[ -z "$REQUIRED_MODEL" ]]; then
+      fail "model declaration is empty: ${MODEL_FILE}"
+    elif command -v ollama >/dev/null 2>&1 && \
+      ollama list 2>/dev/null | awk 'NR > 1 { print $1 }' | grep -Fxq "$REQUIRED_MODEL"; then
+      ok "model installed: ${REQUIRED_MODEL}"
+    else
+      fail "required model is not installed: ${REQUIRED_MODEL}"
+    fi
+  else
+    fail "missing model declaration: ${MODEL_FILE}"
   fi
 fi
 
