@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+HARNESS="${1:-}"
+TASK="${2:-}"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TASK_FILE="${REPO_ROOT}/evals/tasks/${TASK}.md"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/eval <harness> <task>
+
+Harnesses:
+  codex
+  pi
+  goose
+
+Example:
+  ./scripts/eval pi repo-inspection
+EOF
+}
+
+if [[ -z "$HARNESS" || -z "$TASK" ]]; then
+  usage
+  exit 1
+fi
+
+case "$HARNESS" in
+  codex|pi|goose)
+    ;;
+  *)
+    echo "Unknown harness: ${HARNESS}" >&2
+    echo >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+if [[ ! -f "$TASK_FILE" ]]; then
+  echo "Unknown eval task: ${TASK}" >&2
+  echo "Expected: ${TASK_FILE}" >&2
+  exit 1
+fi
+
+echo "Local Agent Stack Evaluation"
+echo
+echo "Harness: ${HARNESS}"
+echo "Task:    ${TASK}"
+echo
+echo "────────────────────────────────────────────────────────────"
+echo
+
+awk '
+  /^## Prompt$/ {
+    in_prompt = 1
+    next
+  }
+
+  /^## / && in_prompt {
+    exit
+  }
+
+  in_prompt {
+    print
+  }
+' "$TASK_FILE"
+
+echo
+echo "────────────────────────────────────────────────────────────"
+echo
+echo "Run the prompt above unchanged."
+echo
+echo "After the session finishes, verify:"
+echo
+echo "  git status --short"
+echo
+echo
+
+case "$HARNESS" in
+  codex)
+    exec "${REPO_ROOT}/scripts/codex-local"
+    ;;
+
+  pi)
+    exec "${REPO_ROOT}/scripts/pi-local"
+    ;;
+
+  goose)
+    exec "${REPO_ROOT}/scripts/goose-local"
+    ;;
+esac

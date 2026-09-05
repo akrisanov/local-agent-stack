@@ -6,7 +6,8 @@ ROLE ?=
 	codex-install codex-local \
 	pi-install pi-local \
 	goose-install goose-local \
-	tunnel-start tunnel-stop tunnel-restart tunnel-status
+	tunnel-start tunnel-stop tunnel-restart tunnel-status \
+	eval
 
 bootstrap:
 	@if [ -z "$(ROLE)" ]; then \
@@ -53,3 +54,10 @@ tunnel-restart:
 
 tunnel-status:
 	@./scripts/tunnel status
+
+eval:
+	@if [ -z "$(HARNESS)" ] || [ -z "$(TASK)" ]; then \
+		echo "Usage: make eval HARNESS=codex|pi|goose TASK=<task>"; \
+		exit 1; \
+	fi
+	@./scripts/eval "$(HARNESS)" "$(TASK)"
