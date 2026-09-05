@@ -25,5 +25,8 @@ tmp/
 # Logs
 *.log
 
-# Evaluation output
+# Generated evaluation artifacts
 evals/runs/
+
+# Cache
+__pycache__/

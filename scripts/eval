@@ -7,6 +7,7 @@ TASK="${2:-}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TASK_FILE="${REPO_ROOT}/evals/tasks/${TASK}.md"
+RUNS_DIR="${REPO_ROOT}/evals/runs"
 
 usage() {
   cat <<'EOF'
@@ -21,6 +22,26 @@ Harnesses:
 Example:
   ./scripts/eval pi repo-inspection
 EOF
+}
+
+extract_section() {
+  local heading="$1"
+  local file="$2"
+
+  awk -v heading="## ${heading}" '
+    $0 == heading {
+      in_section = 1
+      next
+    }
+
+    /^## / && in_section {
+      exit
+    }
+
+    in_section {
+      print
+    }
+  ' "$file"
 }
 
 if [[ -z "$HARNESS" || -z "$TASK" ]]; then
@@ -45,38 +66,50 @@ if [[ ! -f "$TASK_FILE" ]]; then
   exit 1
 fi
 
+PROMPT="$(extract_section "Prompt" "$TASK_FILE")"
+
+WORKSPACE="$(extract_section "Workspace" "$TASK_FILE" \
+  | sed -e 's/^`//' -e 's/`$//' \
+  | sed '/^[[:space:]]*$/d' \
+  | head -n 1)"
+
+RUN_DIR=""
+
+if [[ -n "$WORKSPACE" ]]; then
+  SOURCE_DIR="${REPO_ROOT}/${WORKSPACE}"
+
+  if [[ ! -d "$SOURCE_DIR" ]]; then
+    echo "Eval workspace does not exist:" >&2
+    echo "  ${SOURCE_DIR}" >&2
+    exit 1
+  fi
+
+  mkdir -p "$RUNS_DIR"
+
+  RUN_DIR="${RUNS_DIR}/${TASK}-${HARNESS}"
+  rm -rf "$RUN_DIR"
+  mkdir -p "$RUN_DIR"
+
+  cp -R "${SOURCE_DIR}/." "$RUN_DIR/"
+
+  cd "$RUN_DIR"
+else
+  cd "$REPO_ROOT"
+fi
+
 echo "Local Agent Stack Evaluation"
 echo
-echo "Harness: ${HARNESS}"
-echo "Task:    ${TASK}"
+echo "Harness:   ${HARNESS}"
+echo "Task:      ${TASK}"
+echo "Workspace: ${PWD}"
 echo
 echo "────────────────────────────────────────────────────────────"
 echo
-
-awk '
-  /^## Prompt$/ {
-    in_prompt = 1
-    next
-  }
-
-  /^## / && in_prompt {
-    exit
-  }
-
-  in_prompt {
-    print
-  }
-' "$TASK_FILE"
-
+printf '%s\n' "$PROMPT"
 echo
 echo "────────────────────────────────────────────────────────────"
 echo
 echo "Run the prompt above unchanged."
-echo
-echo "After the session finishes, verify:"
-echo
-echo "  git status --short"
-echo
 echo
 
 case "$HARNESS" in
