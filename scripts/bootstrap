@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROLE="${1:-}"
+
+case "$ROLE" in
+  inference-host|agent-client)
+    ;;
+  *)
+    echo "Usage: $0 inference-host|agent-client" >&2
+    exit 1
+    ;;
+esac
+
+CONFIG_DIR="${HOME}/.config/local-agent-stack"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+mkdir -p "$CONFIG_DIR"
+
+printf '%s\n' "$ROLE" > "${CONFIG_DIR}/role"
+
+if [[ ! -f "${CONFIG_DIR}/env" ]]; then
+  cp "${REPO_ROOT}/.env.example" "${CONFIG_DIR}/env"
+
+  echo
+  echo "Created:"
+  echo "  ${CONFIG_DIR}/env"
+  echo
+  echo "Review the inference endpoint before using a remote client."
+fi
+
+echo
+echo "Configured local-agent-stack"
+echo
+echo "Role:       ${ROLE}"
+echo "Config dir: ${CONFIG_DIR}"
+echo
+echo "Next:"
+echo "  make doctor"

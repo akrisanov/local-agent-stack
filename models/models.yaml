@@ -1,0 +1,12 @@
+version: 1
+
+default: qwen3.6-35b-mlx
+
+models:
+  qwen3.6-35b-mlx:
+    runtime: ollama
+    model: qwen3.6:35b-mlx
+    purpose: coding
+    context_window: 65536
+    platforms:
+      - darwin-arm64

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+
+set -u
+
+CONFIG_DIR="${HOME}/.config/local-agent-stack"
+ROLE_FILE="${CONFIG_DIR}/role"
+ENV_FILE="${CONFIG_DIR}/env"
+
+failures=0
+
+ok() {
+  printf '✓ %s\n' "$1"
+}
+
+fail() {
+  printf '✗ %s\n' "$1"
+  failures=$((failures + 1))
+}
+
+section() {
+  printf '\n%s\n' "$1"
+}
+
+section "local-agent-stack doctor"
+
+#
+# Configuration
+#
+
+section "Configuration"
+
+if [[ -f "$ROLE_FILE" ]]; then
+  ROLE="$(cat "$ROLE_FILE")"
+  ok "role: ${ROLE}"
+else
+  ROLE=""
+  fail "role is not configured"
+fi
+
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  ok "environment configuration found"
+else
+  fail "missing ${ENV_FILE}"
+fi
+
+#
+# Platform
+#
+
+section "Platform"
+
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+
+ok "${OS} ${ARCH}"
+
+#
+# Base tools
+#
+
+section "Tools"
+
+if command -v git >/dev/null 2>&1; then
+  ok "git"
+else
+  fail "git is not installed"
+fi
+
+if command -v curl >/dev/null 2>&1; then
+  ok "curl"
+else
+  fail "curl is not installed"
+fi
+
+#
+# Role-specific checks
+#
+
+if [[ "$ROLE" == "inference-host" ]]; then
+  section "Inference host"
+
+  if command -v ollama >/dev/null 2>&1; then
+    ok "ollama installed"
+  else
+    fail "ollama is not installed"
+  fi
+
+  if curl \
+    --silent \
+    --fail \
+    --max-time 2 \
+    http://127.0.0.1:11434/api/tags \
+    >/dev/null 2>&1; then
+    ok "ollama API reachable"
+  else
+    fail "ollama API is not reachable"
+  fi
+fi
+
+if [[ "$ROLE" == "agent-client" ]]; then
+  section "Inference"
+
+  if [[ -z "${LOCAL_AGENT_BASE_URL:-}" ]]; then
+    fail "LOCAL_AGENT_BASE_URL is not configured"
+  else
+    ok "endpoint configured: ${LOCAL_AGENT_BASE_URL}"
+
+    ENDPOINT="${LOCAL_AGENT_BASE_URL%/}/models"
+
+    if curl \
+      --silent \
+      --fail \
+      --max-time 5 \
+      "$ENDPOINT" \
+      >/dev/null 2>&1; then
+      ok "OpenAI-compatible inference API reachable"
+    else
+      fail "inference API is not reachable"
+    fi
+  fi
+fi
+
+#
+# Result
+#
+
+section "Result"
+
+if [[ "$failures" -eq 0 ]]; then
+  ok "environment looks healthy"
+  exit 0
+fi
+
+printf '✗ %d check(s) failed\n' "$failures"
+exit 1

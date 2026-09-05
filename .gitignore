@@ -1,0 +1,29 @@
+# Local environment
+.env
+.env.local
+*.local
+
+# Secrets
+*.key
+*.pem
+*.token
+secrets.*
+credentials.*
+
+# Local project state
+.local/
+.state/
+tmp/
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Evaluation output
+evals/results/
