@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONFIG_DIR="${HOME}/.config/local-agent-stack"
+ENV_FILE="${CONFIG_DIR}/env"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PI_TEMPLATE="${REPO_ROOT}/config/pi/models.json"
+
+PI_DIR="${HOME}/.pi/agent"
+PI_MODELS="${PI_DIR}/models.json"
+
+if ! command -v pi >/dev/null 2>&1; then
+  echo "Pi is not installed." >&2
+  echo "Run: make pi-install" >&2
+  exit 1
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing ${ENV_FILE}" >&2
+  echo "Run bootstrap first." >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+if [[ -z "${LOCAL_AGENT_BASE_URL:-}" ]]; then
+  echo "LOCAL_AGENT_BASE_URL is not configured." >&2
+  exit 1
+fi
+
+if [[ -z "${LOCAL_AGENT_MODEL:-}" ]]; then
+  echo "LOCAL_AGENT_MODEL is not configured." >&2
+  exit 1
+fi
+
+if ! curl \
+  --silent \
+  --fail \
+  --max-time 5 \
+  "${LOCAL_AGENT_BASE_URL%/}/models" \
+  >/dev/null; then
+  echo "Inference API is not reachable:" >&2
+  echo "  ${LOCAL_AGENT_BASE_URL}" >&2
+  exit 1
+fi
+
+mkdir -p "$PI_DIR"
+
+cp "$PI_TEMPLATE" "$PI_MODELS"
+
+echo "Starting Pi"
+echo
+echo "Model:    ${LOCAL_AGENT_MODEL}"
+echo "Endpoint: ${LOCAL_AGENT_BASE_URL}"
+echo
+
+exec pi \
+  --provider ollama \
+  --model "${LOCAL_AGENT_MODEL}" \
+  "$@"

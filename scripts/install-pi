@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if command -v pi >/dev/null 2>&1; then
+  echo "Pi is already installed:"
+  pi --version
+  exit 0
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm is required to install Pi." >&2
+  exit 1
+fi
+
+echo "Installing Pi..."
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+
+echo
+echo "Pi installed:"
+pi --version

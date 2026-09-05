@@ -2,7 +2,9 @@ SHELL := /bin/bash
 
 ROLE ?=
 
-.PHONY: bootstrap doctor runtime models codex-install codex-local
+.PHONY: bootstrap doctor runtime models \
+	codex-install codex-local \
+	pi-install pi-local
 
 bootstrap:
 	@if [ -z "$(ROLE)" ]; then \
@@ -25,3 +27,9 @@ codex-install:
 
 codex-local:
 	@./scripts/codex-local
+
+pi-install:
+	@./scripts/install-pi
+
+pi-local:
+	@./scripts/pi-local
