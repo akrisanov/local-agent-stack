@@ -4,7 +4,8 @@ ROLE ?=
 
 .PHONY: bootstrap doctor runtime models \
 	codex-install codex-local \
-	pi-install pi-local
+	pi-install pi-local \
+	tunnel-start tunnel-stop tunnel-restart tunnel-status
 
 bootstrap:
 	@if [ -z "$(ROLE)" ]; then \
@@ -33,3 +34,15 @@ pi-install:
 
 pi-local:
 	@./scripts/pi-local
+
+tunnel-start:
+	@./scripts/tunnel start
+
+tunnel-stop:
+	@./scripts/tunnel stop
+
+tunnel-restart:
+	@./scripts/tunnel restart
+
+tunnel-status:
+	@./scripts/tunnel status

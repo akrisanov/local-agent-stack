@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ACTION="${1:-status}"
+
+CONFIG_DIR="${HOME}/.config/local-agent-stack"
+ENV_FILE="${CONFIG_DIR}/env"
+CONTROL_SOCKET="${CONFIG_DIR}/ssh-tunnel.sock"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing ${ENV_FILE}" >&2
+  echo "Run bootstrap first." >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+if [[ -z "${LOCAL_AGENT_SSH_TARGET:-}" ]]; then
+  echo "LOCAL_AGENT_SSH_TARGET is not configured." >&2
+  exit 1
+fi
+
+LOCAL_PORT="${LOCAL_AGENT_LOCAL_PORT:-11434}"
+REMOTE_PORT="${LOCAL_AGENT_REMOTE_PORT:-11434}"
+
+tunnel_running() {
+  ssh \
+    -S "$CONTROL_SOCKET" \
+    -O check \
+    "$LOCAL_AGENT_SSH_TARGET" \
+    >/dev/null 2>&1
+}
+
+start_tunnel() {
+  if tunnel_running; then
+    echo "Tunnel is already running."
+    exit 0
+  fi
+
+  echo "Starting inference tunnel"
+  echo
+  echo "Target: ${LOCAL_AGENT_SSH_TARGET}"
+  echo "Local:  127.0.0.1:${LOCAL_PORT}"
+  echo "Remote: 127.0.0.1:${REMOTE_PORT}"
+  echo
+
+  ssh \
+    -M \
+    -S "$CONTROL_SOCKET" \
+    -fNT \
+    -o ExitOnForwardFailure=yes \
+    -L "127.0.0.1:${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" \
+    "$LOCAL_AGENT_SSH_TARGET"
+
+  if tunnel_running; then
+    echo "✓ tunnel started"
+  else
+    echo "✗ tunnel failed to start" >&2
+    exit 1
+  fi
+}
+
+stop_tunnel() {
+  if ! tunnel_running; then
+    echo "Tunnel is not running."
+    exit 0
+  fi
+
+  ssh \
+    -S "$CONTROL_SOCKET" \
+    -O exit \
+    "$LOCAL_AGENT_SSH_TARGET" \
+    >/dev/null
+
+  echo "✓ tunnel stopped"
+}
+
+status_tunnel() {
+  if tunnel_running; then
+    echo "✓ tunnel running"
+    echo "  127.0.0.1:${LOCAL_PORT} → ${LOCAL_AGENT_SSH_TARGET}:127.0.0.1:${REMOTE_PORT}"
+    exit 0
+  fi
+
+  echo "✗ tunnel is not running"
+  exit 1
+}
+
+case "$ACTION" in
+  start)
+    start_tunnel
+    ;;
+  stop)
+    stop_tunnel
+    ;;
+  restart)
+    stop_tunnel
+    start_tunnel
+    ;;
+  status)
+    status_tunnel
+    ;;
+  *)
+    echo "Usage: $0 start|stop|restart|status" >&2
+    exit 1
+    ;;
+esac
