@@ -26,4 +26,4 @@ tmp/
 *.log
 
 # Evaluation output
-evals/results/
+evals/runs/
