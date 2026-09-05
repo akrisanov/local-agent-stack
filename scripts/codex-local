@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONFIG_DIR="${HOME}/.config/local-agent-stack"
+ENV_FILE="${CONFIG_DIR}/env"
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CODEX_TEMPLATE="${REPO_ROOT}/config/codex/config.toml"
+
+CODEX_DIR="${HOME}/.codex"
+CODEX_CONFIG="${CODEX_DIR}/config.toml"
+CODEX_LOCAL_CONFIG="${CODEX_DIR}/local.config.toml"
+
+if ! command -v codex >/dev/null 2>&1; then
+  echo "Codex CLI is not installed." >&2
+  echo "Run: make codex-install" >&2
+  exit 1
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing ${ENV_FILE}" >&2
+  echo "Run bootstrap first." >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+if [[ -z "${LOCAL_AGENT_BASE_URL:-}" ]]; then
+  echo "LOCAL_AGENT_BASE_URL is not configured." >&2
+  exit 1
+fi
+
+if [[ -z "${LOCAL_AGENT_MODEL:-}" ]]; then
+  echo "LOCAL_AGENT_MODEL is not configured." >&2
+  exit 1
+fi
+
+if ! curl \
+  --silent \
+  --fail \
+  --max-time 5 \
+  "${LOCAL_AGENT_BASE_URL%/}/models" \
+  >/dev/null; then
+  echo "Inference API is not reachable:" >&2
+  echo "  ${LOCAL_AGENT_BASE_URL}" >&2
+  exit 1
+fi
+
+if [[ ! -f "$CODEX_TEMPLATE" ]]; then
+  echo "Missing Codex configuration:" >&2
+  echo "  ${CODEX_TEMPLATE}" >&2
+  exit 1
+fi
+
+mkdir -p "$CODEX_DIR"
+
+if [[ ! -f "$CODEX_CONFIG" ]]; then
+  cp "$CODEX_TEMPLATE" "$CODEX_CONFIG"
+elif ! grep -Fq '[model_providers.local-agent-stack]' "$CODEX_CONFIG"; then
+  {
+    printf '\n'
+    cat "$CODEX_TEMPLATE"
+  } >> "$CODEX_CONFIG"
+fi
+
+cat > "$CODEX_LOCAL_CONFIG" <<EOF
+model = "${LOCAL_AGENT_MODEL}"
+model_provider = "local-agent-stack"
+EOF
+
+echo "Starting Codex"
+echo
+echo "Model:    ${LOCAL_AGENT_MODEL}"
+echo "Endpoint: ${LOCAL_AGENT_BASE_URL}"
+echo "Profile:  local"
+echo
+
+exec codex --profile local "$@"

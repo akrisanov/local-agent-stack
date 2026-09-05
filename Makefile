@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 ROLE ?=
 
-.PHONY: bootstrap doctor runtime models
+.PHONY: bootstrap doctor runtime models codex-install codex-local
 
 bootstrap:
 	@if [ -z "$(ROLE)" ]; then \
@@ -11,11 +11,17 @@ bootstrap:
 	fi
 	@./scripts/bootstrap "$(ROLE)"
 
+doctor:
+	@./scripts/doctor
+
 runtime:
 	@./scripts/install-runtime
 
 models:
 	@./scripts/models
 
-doctor:
-	@./scripts/doctor
+codex-install:
+	@./scripts/install-codex
+
+codex-local:
+	@./scripts/codex-local

@@ -1,0 +1,7 @@
+[model_providers.local-agent-stack]
+name = "Local Agent Stack"
+base_url = "http://127.0.0.1:11434/v1"
+
+[profiles.local]
+model = "qwen3.6:35b-mlx"
+model_provider = "local-agent-stack"
