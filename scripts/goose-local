@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CONFIG_DIR="${HOME}/.config/local-agent-stack"
+ENV_FILE="${CONFIG_DIR}/env"
+
+if ! command -v goose >/dev/null 2>&1; then
+  echo "Goose is not installed." >&2
+  echo "Run: make goose-install" >&2
+  exit 1
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing ${ENV_FILE}" >&2
+  echo "Run bootstrap first." >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+
+if [[ -z "${LOCAL_AGENT_BASE_URL:-}" ]]; then
+  echo "LOCAL_AGENT_BASE_URL is not configured." >&2
+  exit 1
+fi
+
+if [[ -z "${LOCAL_AGENT_MODEL:-}" ]]; then
+  echo "LOCAL_AGENT_MODEL is not configured." >&2
+  exit 1
+fi
+
+if ! curl \
+  --silent \
+  --fail \
+  --max-time 5 \
+  "${LOCAL_AGENT_BASE_URL%/}/models" \
+  >/dev/null; then
+  echo "Inference API is not reachable:" >&2
+  echo "  ${LOCAL_AGENT_BASE_URL}" >&2
+  echo
+  echo "If this is an agent-client, run:" >&2
+  echo "  make tunnel-start" >&2
+  exit 1
+fi
+
+OLLAMA_HOST="${LOCAL_AGENT_BASE_URL%/v1}"
+OLLAMA_HOST="${OLLAMA_HOST%/}"
+
+echo "Starting Goose"
+echo
+echo "Model:    ${LOCAL_AGENT_MODEL}"
+echo "Endpoint: ${LOCAL_AGENT_BASE_URL}"
+echo
+
+export GOOSE_PROVIDER="ollama"
+export GOOSE_MODEL="${LOCAL_AGENT_MODEL}"
+export OLLAMA_HOST
+export GOOSE_MODE="approve"
+
+exec goose session "$@"

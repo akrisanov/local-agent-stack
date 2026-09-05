@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if command -v goose >/dev/null 2>&1; then
+  echo "Goose is already installed:"
+  goose --version
+  exit 0
+fi
+
+echo "Installing Goose..."
+
+curl -fsSL \
+  https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \
+  | bash
+
+echo
+echo "Goose installed:"
+goose --version
