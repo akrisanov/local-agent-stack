@@ -127,19 +127,53 @@ The repository excludes secrets and personal infrastructure details, such as:
 
 ## Models
 
-Desired models are declared in `models/models.yaml`.
+Desired models are declared in `models/models.yaml` and managed through the repository tooling.
 
-Model installation and locking will be added separately.
+The current reference model is `qwen3.6:35b-mlx`, served by Ollama on the inference host.
 
 ## Agent harnesses
 
-The first harnesses planned for this project are:
+The project currently supports:
 
 - Codex CLI
 - Pi
 - Goose
 
+Each harness has repository-managed installation and local-inference launch scripts:
+
+```shell
+make codex-install
+make codex-local
+
+make pi-install
+make pi-local
+
+make goose-install
+make goose-local
+```
+
 Qwen Code and OpenCode may be added later for comparison.
+
+## Evaluations
+
+The repository includes a controlled evaluation suite for comparing model/harness combinations.
+
+Run an evaluation with:
+
+```shell
+make eval HARNESS=pi TASK=bug-diagnosis
+```
+
+The current tasks are:
+
+- `bug-diagnosis` — inspect a failing codebase, identify the root cause, and explain the minimal fix without modifying files
+- `minimal-fix` — diagnose the failure, implement the smallest correct change, and verify it with tests
+
+Evaluation fixtures live in `evals/fixtures/`, task definitions in `evals/tasks/`,
+generated runs in `evals/runs/`, and consolidated results in `evals/results/`.
+
+The current baseline evaluates `qwen3.6:35b-mlx` with Codex, Pi, and Goose.
+The suite will be expanded with more realistic repository-level tasks before selecting a preferred harness.
 
 ---
 
