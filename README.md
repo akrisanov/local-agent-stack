@@ -166,14 +166,39 @@ make eval HARNESS=pi TASK=bug-diagnosis
 
 The current tasks are:
 
-- `bug-diagnosis` — inspect a failing codebase, identify the root cause, and explain the minimal fix without modifying files
+- `repo-inspection` — inspect the repository, reconstruct its architecture and request paths,
+  and propose concrete improvements without modifying files
+- `bug-diagnosis` — inspect a failing codebase, identify the root cause, and explain
+  the minimal fix without modifying files
 - `minimal-fix` — diagnose the failure, implement the smallest correct change, and verify it with tests
+- `multi-file-bug` — trace a failure across multiple modules, identify the root cause,
+  implement the smallest correct fix, and verify the full test suite
+- `feature-implementation` — implement a small cross-file feature, update the relevant tests,
+  and verify the complete test suite
 
 Evaluation fixtures live in `evals/fixtures/`, task definitions in `evals/tasks/`,
-generated runs in `evals/runs/`, and consolidated results in `evals/results/`.
+generated runs in `evals/runs/`, manual reviews in `evals/reviews/`, and consolidated results in `evals/results/`.
+
+Each evaluation produces objective run metadata locally, including wall time, test results, changed files, and diff size.
+A separate committed review records the subjective verdict, recovery behavior, requirement coverage,
+final-answer completion, and notes.
+
+Create a review template after a run with:
+
+```shell
+make review HARNESS=goose TASK=minimal-fix
+```
+
+Preview the consolidated report for the current model with:
+
+```shell
+make report
+```
 
 The current baseline evaluates `qwen3.6:35b-mlx` with Codex, Pi, and Goose.
-The suite will be expanded with more realistic repository-level tasks before selecting a preferred harness.
+Goose has a complete structured baseline across all five tasks;
+Pi and Codex are being migrated to the same evaluation pipeline
+so harness comparisons use identical run metadata and review criteria.
 
 ---
 
