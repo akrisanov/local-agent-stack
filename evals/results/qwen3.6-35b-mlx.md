@@ -1,313 +1,73 @@
 # Qwen3.6 35B MLX
 
-- Model: `qwen3.6:35b-mlx`
-- Runtime: Ollama / MLX
-- Transport: SSH tunnel to the inference host
-- Client endpoint: <http://127.0.0.1:11434>
-- Codex and Pi use the OpenAI-compatible endpoint: <http://127.0.0.1:11434/v1>
-- Goose uses the native Ollama provider with: OLLAMA_HOST=<http://127.0.0.1:11434>
+`qwen3.6:35b-mlx` · Ollama / MLX · local inference over SSH
 
-## Summary
+## At a glance
 
-| Harness       | Repository inspection | Bug diagnosis | Minimal fix | Overall             |
-| ------------- | --------------------- | ------------- | ----------- | ------------------- |
-| Codex 0.153.4 | Partial               | Pass          | Partial     | Problematic pairing |
-| Pi 0.85.1     | Pass                  | Pass          | Pass        | Viable              |
-| Goose         | Pass                  | Pass          | Pass        | Viable              |
+**Goose is the best fit so far.** It passed every task, finished the recorded runs much faster than Codex,
+and needed no recovery on the multi-file task. Pi also passed everything, though a few runs included navigation
+or editing mistakes that it had to recover from. Codex generally reasoned and edited correctly,
+but this setup was slow, reported unusually high token usage, and twice failed to produce the expected final response.
 
-Pass means that the harness completed the task, produced the expected result,
-and produced a final answer.
+| Harness           | Inspection | Diagnosis | Minimal fix | Multi-file bug | Recorded time* | Current read                         |
+| ----------------- | ---------: | --------: | ----------: | -------------: | -------------: | ------------------------------------ |
+| **Goose**         |       Pass |      Pass |        Pass |           Pass |    **58–111s** | Best fit so far                      |
+| **Pi 0.85.1**     |       Pass |      Pass |        Pass |           Pass |              — | Solid, with some recovery needed     |
+| **Codex 0.153.4** |    Partial |      Pass |     Partial |           Pass |   **276–304s** | Works, but inefficient in this setup |
 
-Partial means that the underlying work was substantially correct but one or more
-important success criteria were not satisfied.
+\* Timing was not captured for every run, so these numbers are useful observations rather than a controlled performance benchmark.
 
-## Repository inspection
+## Goose
 
-### Codex
+Goose had the cleanest results across the current suite.
 
-Result: `Partial`
+- Repository inspection: **111s**, ~**14k / 128k** context.
+- Bug diagnosis: **60s**, ~**7k / 128k** context.
+- Minimal fix: **71s**, ~**8k / 128k** context.
+- Multi-file bug: **58s**, ~**8k / 128k** context, **6 tests passed**.
+- No editing or recovery problems on the multi-file task.
 
-The agent successfully:
+There were a couple of tool-advertisement errors in earlier runs, but Goose recovered and completed the tasks normally.
 
-- inspected the repository;
-- used tools;
-- reconstructed the architecture.
+## Pi
 
-However, it returned to the interactive prompt without producing a visible final answer.
+Pi passed all four evaluations and handled recovery reasonably well when things went wrong.
 
-Observed wall time: `5m04s`
+On the multi-file task, its first edit left `config.py` with invalid Python. Pi noticed the pytest collection failure,
+reread the file, repaired the edit, and finished with **6 tests passed**. Earlier runs also included a few minor navigation mistakes.
 
-Codex reported:
+One useful finding came from the first version of the minimal-fix fixture: Pi chose `>` instead of `>=`,
+and the original tests did not catch the boundary case. Adding an exact-TTL test exposed the problem;
+Pi then produced the correct fix. That was as much a test-suite issue as an agent issue, and the fixture was kept stricter afterward.
 
-```shell
-Model metadata for `qwen3.6:35b-mlx` not found.
-Defaulting to fallback metadata.
-```
+## Codex
 
-This warning is a possible contributor to the poor behavior, but
-the evaluation does not establish causality.
+Codex was capable of doing the coding work, but the integration with this local model was noticeably less efficient.
 
-### Pi
+- Repository inspection: **304s**, Partial because no final response was produced.
+- Bug diagnosis: **299s**, ~**370k** reported tokens, Pass.
+- Minimal fix: **276s**, ~**651k** reported tokens, Partial because no final response was produced.
+- Multi-file bug: **303s**, **6 tests passed**, Pass.
 
-Result: `Pass`
+The diagnosis and code changes were generally correct. The main concerns were the roughly five-minute runtime
+even on small fixtures, very high reported token counts, and inconsistent completion of the final agent response.
 
-The agent successfully:
+Codex also repeatedly reported that metadata for `qwen3.6:35b-mlx` was unavailable and that fallback metadata was being used.
+The results do not show that this warning caused the behavior, but it is worth keeping in mind when interpreting the Codex numbers.
 
-- inspected the repository;
-- used tools;
-- reconstructed the inference-host and agent-client roles;
-- produced a final answer;
-- made no repository modifications.
+## What has been tested
 
-The agent recovered from an initial path/navigation mistake without affecting the final result.
+The suite currently covers four different kinds of work:
 
-Wall-clock time was not recorded for the initial run.
+1. understanding an unfamiliar repository;
+2. diagnosing a bug without modifying code;
+3. making a small, targeted fix;
+4. tracing and fixing a bug across several modules.
 
-### Goose
+All three harnesses solved the multi-file task and ended with **6 passing tests**.
 
-Result: `Pass`
+## Takeaway
 
-The agent successfully:
-
-- inspected the repository;
-- used tools;
-- reconstructed the architecture;
-- produced a final answer;
-- made no repository modifications.
-
-Observed wall time: `1m51s`
-
-Observed context usage: `~14k / 128k`
-
-The answer contained a minor unsupported implementation detail about MLX/MPS,
-but the architectural explanation was otherwise correct.
-
-## Bug diagnosis
-
-Task: [bug-diagnosis⁠](./tasks/bug-diagnosis.md)
-
-The fixture contains an inverted cache TTL expiration condition.
-
-The expected diagnosis is:
-
-```python
-if time.monotonic() - created_at >= self.ttl_seconds:
-```
-
-The task is read-only: the harness must diagnose the problem without modifying the workspace.
-
-### Codex
-
-Result: `Pass`
-
-The agent:
-
-- inspected the implementation and tests;
-- ran all three tests;
-- observed three failures;
-- identified the inverted TTL condition;
-- correctly handled the exact-TTL boundary;
-- proposed the minimal < → >= fix;
-- produced a final answer;
-- made no intentional modifications.
-
-Observed wall time: `4m59s`
-
-Observed token usage:
-
-```text
-input:  368,177
-output:   1,636
-total:  369,813
-```
-
-Codex again reported that model metadata was unavailable and fallback metadata was being used.
-
-### Pi
-
-Result: `Pass`
-
-The agent:
-
-- inspected the implementation and tests;
-- ran the tests;
-- identified the inverted TTL condition;
-- proposed the correct minimal fix;
-- produced a final answer;
-- did not intentionally modify the workspace.
-
-The agent initially attempted to access files using incorrect absolute paths,
-received ENOENT, and recovered by using the workspace-relative paths.
-
-It also performed an unnecessary package.json probe despite the fixture being a Python project.
-
-### Goose
-
-Result: Pass
-
-The agent:
-
-- inspected the fixture;
-- ran the tests;
-- identified the inverted TTL condition;
-- proposed the correct minimal fix;
-- produced a final answer;
-- did not modify the workspace.
-
-Observed wall time: `1m00s`
-
-Observed context usage: `~7k / 128k`
-
-A tool-advertisement error occurred during the run, but the agent recovered and completed the task.
-
-## Minimal fix
-
-Task: [minimal-fix⁠](./tasks/minimal-fix.md)
-
-The expected change is exactly:
-
-```diff
--        if time.monotonic() - created_at < self.ttl_seconds:
-+        if time.monotonic() - created_at >= self.ttl_seconds:
-```
-
-The tests must remain unchanged.
-
-### Codex
-
-Result: `Partial`
-
-The agent correctly:
-
-- identified the root cause before editing;
-- ran the failing tests;
-- changed only the TTL comparison;
-- used the correct >= boundary;
-- left the tests unchanged;
-- ran the tests again.
-
-However, after the post-edit test command Codex displayed:
-
-```shell
-(no output)
-```
-
-and returned to the interactive prompt without producing the required final
-answer.
-
-Manual verification after the session confirmed:
-
-```shell
-3 passed
-```
-
-The fixture comparison also confirmed that `test_cache.py` was unchanged.
-
-Observed wall time: `4m36s`
-
-Observed token usage:
-
-```shell
-input:  650,028
-output:   1,387
-total:  651,415
-```
-
-Codex again reported fallback model metadata.
-
-The implementation itself was correct; the failure was in completing
-the agent workflow and reporting the result.
-
-### Pi
-
-Result: `Pass`
-
-The agent:
-
-- identified the root cause before editing;
-- ran the failing tests;
-- changed only the TTL comparison;
-- used >=;
-- left the tests unchanged;
-- reran the tests;
-- obtained three passing tests;
-- produced a final answer.
-
-An earlier version of the fixture did not test the exact-TTL boundary.
-On that version Pi implemented > rather than >=, while still passing both tests.
-
-The fixture was subsequently strengthened with an exact-TTL test.
-On the current fixture Pi selected the correct >= comparison and passed all three tests.
-
-This earlier result is retained because it exposed a weakness in the evaluation fixture itself
-rather than being silently discarded.
-
-### Goose
-
-Result: `Pass`
-
-The agent:
-
-- identified the root cause before editing;
-- made the expected one-line change;
-- left the tests unchanged;
-- ran the tests after editing;
-- obtained passing tests;
-- produced a final answer;
-- made no unrelated changes.
-
-Observed wall time: `1m11s`
-
-Observed context usage: `~8k / 128k`
-
-A tool-advertisement error occurred during the run, but the agent recovered
-and completed the workflow.
-
-## Observations
-
-### Codex
-
-The model demonstrated adequate reasoning and coding ability through Codex:
-repository inspection, test execution, diagnosis, and editing all worked.
-
-The primary problems observed were:
-
-- very high latency;
-- extremely high reported input-token usage for the small controlled fixture;
-- missing final answers in two of the three evaluations;
-- repeated fallback-model-metadata warnings.
-
-These results support describing this specific configuration as a problematic pairing.
-
-They do not establish that Codex itself or Qwen3.6 itself is unsuitable.
-
-### Pi
-
-Pi completed all current evaluation tasks successfully.
-
-It recovered from minor navigation/tool mistakes and produced normal final answers.
-
-The first minimal-fix run also demonstrated why boundary cases need to be
-encoded explicitly in evaluation fixtures rather than inferred from expected agent reasoning.
-
-### Goose
-
-Goose completed all current evaluation tasks successfully and showed
-good wall-clock performance in the recorded runs.
-
-The harness also recovered from tool-advertisement errors rather than terminating the agent loop.
-
-The current evidence supports describing Goose as viable, but the suite is
-still too small to make a broader quality claim.
-
-## Current conclusion
-
-For `qwen3.6:35b-mlx` on the current local inference stack:
-
-1. Pi is a viable coding-agent harness.
-2. Goose is a viable coding-agent harness and has shown good latency in the recorded tasks.
-3. Codex can reason, inspect, execute tools, and edit correctly,
-   but this particular local-model integration currently has
-   substantial efficiency and agent-loop completion problems.
-
-More complex evaluations are required before selecting a preferred harness.
+For this particular `qwen3.6:35b-mlx` setup, I would use **Goose as the default harness today**.
+Pi is a reasonable alternative and has shown that it can recover from its own mistakes.
+Codex works at the reasoning and editing level, but the current local-model pairing is too slow and inconsistent to be the default.
