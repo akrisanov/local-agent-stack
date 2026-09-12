@@ -9,6 +9,16 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TASK_FILE="${REPO_ROOT}/evals/tasks/${TASK}.md"
 RUNS_DIR="${REPO_ROOT}/evals/runs"
 
+MODEL_FILE="${REPO_ROOT}/models/default-model"
+
+if [[ -f "$MODEL_FILE" ]]; then
+  MODEL="$(tr -d '[:space:]' < "$MODEL_FILE")"
+else
+  MODEL="unknown"
+fi
+
+MODEL_SLUG="$(printf '%s' "$MODEL" | tr ':/' '--')"
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -44,6 +54,30 @@ extract_section() {
   ' "$file"
 }
 
+get_harness_version() {
+  case "$1" in
+    codex)
+      codex --version 2>/dev/null | head -n 1
+      ;;
+    pi)
+      pi --version 2>/dev/null | head -n 1
+      ;;
+    goose)
+      goose --version 2>/dev/null | head -n 1
+      ;;
+  esac | xargs
+}
+
+run_pytest_summary() {
+  local workdir="$1"
+  local output_file="$2"
+
+  (
+    cd "$workdir"
+    python3 -m pytest -q
+  ) >"$output_file" 2>&1
+}
+
 if [[ -z "$HARNESS" || -z "$TASK" ]]; then
   usage
   exit 1
@@ -66,6 +100,7 @@ if [[ ! -f "$TASK_FILE" ]]; then
   exit 1
 fi
 
+HARNESS_VERSION="$(get_harness_version "$HARNESS")"
 PROMPT="$(extract_section "Prompt" "$TASK_FILE")"
 
 WORKSPACE="$(extract_section "Workspace" "$TASK_FILE" \
@@ -73,7 +108,14 @@ WORKSPACE="$(extract_section "Workspace" "$TASK_FILE" \
   | sed '/^[[:space:]]*$/d' \
   | head -n 1)"
 
-RUN_DIR=""
+RUN_DIR="${RUNS_DIR}/${MODEL_SLUG}/${HARNESS}/${TASK}"
+WORKSPACE_DIR="${RUN_DIR}/workspace"
+
+rm -rf "$RUN_DIR"
+mkdir -p "$RUN_DIR"
+
+rm -rf "$RUN_DIR"
+mkdir -p "$RUN_DIR"
 
 if [[ -n "$WORKSPACE" ]]; then
   SOURCE_DIR="${REPO_ROOT}/${WORKSPACE}"
@@ -84,15 +126,29 @@ if [[ -n "$WORKSPACE" ]]; then
     exit 1
   fi
 
-  mkdir -p "$RUNS_DIR"
+  mkdir -p "$WORKSPACE_DIR"
+  cp -R "${SOURCE_DIR}/." "$WORKSPACE_DIR/"
 
-  RUN_DIR="${RUNS_DIR}/${TASK}-${HARNESS}"
-  rm -rf "$RUN_DIR"
-  mkdir -p "$RUN_DIR"
+  (
+    cd "$WORKSPACE_DIR"
 
-  cp -R "${SOURCE_DIR}/." "$RUN_DIR/"
+    git init -q
 
-  cd "$RUN_DIR"
+    cat > .git/info/exclude <<'EOF'
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store
+EOF
+
+    git add -A
+    git \
+      -c user.name="local-agent-stack" \
+      -c user.email="eval@local" \
+      commit -qm "eval baseline"
+  )
+
+  cd "$WORKSPACE_DIR"
 else
   cd "$REPO_ROOT"
 fi
@@ -112,16 +168,91 @@ echo
 echo "Run the prompt above unchanged."
 echo
 
+BASELINE_TEST_OUTPUT="${RUN_DIR}/tests-before.txt"
+BASELINE_TEST_EXIT_CODE=""
+
+if [[ -n "$WORKSPACE" ]]; then
+  if run_pytest_summary "$WORKSPACE_DIR" "$BASELINE_TEST_OUTPUT"; then
+    BASELINE_TEST_EXIT_CODE=0
+  else
+    BASELINE_TEST_EXIT_CODE=$?
+  fi
+else
+  : > "$BASELINE_TEST_OUTPUT"
+fi
+
+START_TIME="$(date +%s)"
+
+set +e
+
 case "$HARNESS" in
   codex)
-    exec "${REPO_ROOT}/scripts/codex-local"
+    "${REPO_ROOT}/scripts/codex-local"
     ;;
 
   pi)
-    exec "${REPO_ROOT}/scripts/pi-local"
+    "${REPO_ROOT}/scripts/pi-local"
     ;;
 
   goose)
-    exec "${REPO_ROOT}/scripts/goose-local"
+    "${REPO_ROOT}/scripts/goose-local"
     ;;
 esac
+
+EXIT_CODE=$?
+
+set -e
+
+END_TIME="$(date +%s)"
+WALL_TIME_SECONDS=$((END_TIME - START_TIME))
+
+FINAL_TEST_OUTPUT="${RUN_DIR}/tests-after.txt"
+FINAL_TEST_EXIT_CODE=""
+
+if [[ -n "$WORKSPACE" ]]; then
+  if run_pytest_summary "$WORKSPACE_DIR" "$FINAL_TEST_OUTPUT"; then
+    FINAL_TEST_EXIT_CODE=0
+  else
+    FINAL_TEST_EXIT_CODE=$?
+  fi
+else
+  : > "$FINAL_TEST_OUTPUT"
+fi
+
+DIFF_FILE="${RUN_DIR}/diff.patch"
+CHANGED_FILES_FILE="${RUN_DIR}/changed-files.txt"
+
+if [[ -n "$WORKSPACE" ]]; then
+  (
+    cd "$WORKSPACE_DIR"
+    git diff --binary HEAD -- . > "$DIFF_FILE"
+    git diff --name-only HEAD -- . > "$CHANGED_FILES_FILE"
+  )
+else
+  : > "$DIFF_FILE"
+  : > "$CHANGED_FILES_FILE"
+fi
+
+"${REPO_ROOT}/scripts/write-eval-result" \
+  --output "${RUN_DIR}/run.json" \
+  --harness "$HARNESS" \
+  --harness-version "$HARNESS_VERSION" \
+  --task "$TASK" \
+  --model "$MODEL" \
+  --workspace "$WORKSPACE" \
+  --wall-time-seconds "$WALL_TIME_SECONDS" \
+  --exit-code "$EXIT_CODE" \
+  --changed-files-file "$CHANGED_FILES_FILE" \
+  --diff-file "$DIFF_FILE" \
+  --tests-before-file "$BASELINE_TEST_OUTPUT" \
+  --tests-before-exit-code "${BASELINE_TEST_EXIT_CODE:-0}" \
+  --tests-after-file "$FINAL_TEST_OUTPUT" \
+  --tests-after-exit-code "${FINAL_TEST_EXIT_CODE:-0}"
+
+echo
+echo "Evaluation metadata:"
+echo "  Result:    ${RUN_DIR}/run.json"
+echo "  Wall time: ${WALL_TIME_SECONDS}s"
+echo "  Exit code: ${EXIT_CODE}"
+
+exit "$EXIT_CODE"
