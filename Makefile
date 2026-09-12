@@ -7,7 +7,7 @@ ROLE ?=
 	pi-install pi-local \
 	goose-install goose-local \
 	tunnel-start tunnel-stop tunnel-restart tunnel-status \
-	eval
+	eval review report
 
 bootstrap:
 	@if [ -z "$(ROLE)" ]; then \
@@ -65,3 +65,10 @@ eval:
 report:
 	@MODEL="$$(tr -d '[:space:]' < models/default-model)"; \
 	./scripts/report --model "$$MODEL"
+
+review:
+	@if [ -z "$(HARNESS)" ] || [ -z "$(TASK)" ]; then \
+		echo "Usage: make review HARNESS=codex|pi|goose TASK=<task>"; \
+		exit 1; \
+	fi
+	@./scripts/review "$(HARNESS)" "$(TASK)"
