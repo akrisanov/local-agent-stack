@@ -61,3 +61,7 @@ eval:
 		exit 1; \
 	fi
 	@./scripts/eval "$(HARNESS)" "$(TASK)"
+
+report:
+	@MODEL="$$(tr -d '[:space:]' < models/default-model)"; \
+	./scripts/report --model "$$MODEL"

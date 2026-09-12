@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+from pathlib import Path
+
+
+def format_bool(value) -> str:
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return "—"
+
+
+def format_tests(tests: dict | None) -> str:
+    if not tests:
+        return "—"
+
+    parts = []
+
+    for key in ("passed", "failed", "errors", "skipped"):
+        value = tests.get(key, 0)
+        if value:
+            parts.append(f"{value} {key}")
+
+    if not parts:
+        parts.append("0 tests")
+
+    return ", ".join(parts)
+
+
+def load_runs(repo_root: Path, model_slug: str) -> list[dict]:
+    runs_root = repo_root / "evals" / "runs" / model_slug
+
+    if not runs_root.exists():
+        raise SystemExit(f"No eval runs found for model: {model_slug}")
+
+    rows = []
+
+    for run_file in sorted(runs_root.glob("*/*/run.json")):
+        run = json.loads(run_file.read_text(encoding="utf-8"))
+
+        harness = run["harness"]
+        task = run["task"]
+
+        review_file = (
+            repo_root / "evals" / "reviews" / model_slug / harness / f"{task}.json"
+        )
+
+        if review_file.exists():
+            review = json.loads(review_file.read_text(encoding="utf-8"))
+        else:
+            review = {
+                "verdict": "",
+                "recovery": "",
+                "requirements_met": None,
+                "final_answer": None,
+                "notes": [],
+            }
+
+        rows.append(
+            {
+                "run": run,
+                "review": review,
+                "review_file": review_file,
+            }
+        )
+
+    return rows
+
+
+def render_report(model: str, rows: list[dict]) -> str:
+    lines = [
+        f"# {model}",
+        "",
+        "## Summary",
+        "",
+        "| Harness | Task | Verdict | Time | Tests before | Tests after | Changed files | Diff |",
+        "| --- | --- | --- | ---: | --- | --- | --- | ---: |",
+    ]
+
+    for row in rows:
+        run = row["run"]
+        review = row["review"]
+
+        verdict = review.get("verdict") or "unreviewed"
+        changed_files = ", ".join(run.get("changed_files", [])) or "—"
+
+        diff_added = run.get("diff_lines_added", 0)
+        diff_removed = run.get("diff_lines_removed", 0)
+        diff = f"+{diff_added}/-{diff_removed}"
+
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    run["harness"],
+                    run["task"],
+                    verdict,
+                    f"{run['wall_time_seconds']}s",
+                    format_tests(run.get("tests_before")),
+                    format_tests(run.get("tests_after")),
+                    changed_files,
+                    diff,
+                ]
+            )
+            + " |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Runs",
+            "",
+        ]
+    )
+
+    for row in rows:
+        run = row["run"]
+        review = row["review"]
+
+        lines.extend(
+            [
+                f"### {run['harness']} · {run['task']}",
+                "",
+                f"- Harness version: `{run.get('harness_version', 'unknown')}`",
+                f"- Verdict: `{review.get('verdict') or 'unreviewed'}`",
+                f"- Recovery: `{review.get('recovery') or '—'}`",
+                f"- Requirements met: {format_bool(review.get('requirements_met'))}",
+                f"- Final answer: {format_bool(review.get('final_answer'))}",
+                f"- Wall time: {run.get('wall_time_seconds', 0)}s",
+                f"- Exit code: {run.get('exit_code', 0)}",
+                f"- Tests before: {format_tests(run.get('tests_before'))}",
+                f"- Tests after: {format_tests(run.get('tests_after'))}",
+                f"- Changed files: {', '.join(run.get('changed_files', [])) or '—'}",
+                f"- Diff: +{run.get('diff_lines_added', 0)}/-{run.get('diff_lines_removed', 0)}",
+            ]
+        )
+
+        notes = review.get("notes", [])
+
+        if notes:
+            lines.extend(["", "Notes:"])
+
+            for note in notes:
+                lines.append(f"- {note}")
+
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--model",
+        help="Model name, for example qwen3.6:35b-mlx",
+    )
+
+    parser.add_argument(
+        "--output",
+        help="Write the generated report to this file instead of stdout",
+    )
+
+    args = parser.parse_args()
+
+    repo_root = Path(__file__).resolve().parent.parent
+
+    if args.model:
+        model = args.model
+    else:
+        model_file = repo_root / "models" / "default-model"
+
+        if not model_file.exists():
+            raise SystemExit(
+                "No --model provided and models/default-model does not exist"
+            )
+
+        model = model_file.read_text(encoding="utf-8").strip()
+
+    model_slug = model.replace(":", "-").replace("/", "-")
+
+    rows = load_runs(repo_root, model_slug)
+
+    if not rows:
+        raise SystemExit(f"No run.json files found for model: {model}")
+
+    report = render_report(model, rows)
+
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report, encoding="utf-8")
+        print(f"Wrote report: {output}")
+    else:
+        print(report, end="")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,12 @@
+{
+  "verdict": "pass",
+  "recovery": "clean",
+  "requirements_met": true,
+  "final_answer": true,
+  "notes": [
+    "Correctly identified the inverted TTL comparison.",
+    "Applied the minimal one-line fix.",
+    "Did not modify tests.",
+    "Ran the tests successfully after the change."
+  ]
+}
